@@ -16,7 +16,7 @@ namespace HOS.ECS.Entity
             this.guid = Guid.NewGuid();
         }
 
-        [SerializeField] private Guid guid;
+        [SerializeField] protected Guid guid;
         public Guid GUID => guid;
     }
 }

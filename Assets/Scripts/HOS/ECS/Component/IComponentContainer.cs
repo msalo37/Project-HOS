@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Unity.VisualScripting;
 
 namespace HOS.ECS.Component
@@ -12,6 +13,7 @@ namespace HOS.ECS.Component
 
         // Эффективный доступ
         ComponentSpan<T> GetSpan();
+        IEnumerable<(Guid, T)> EnumerateAll();
     }
 
     public interface IComponentContainerBase

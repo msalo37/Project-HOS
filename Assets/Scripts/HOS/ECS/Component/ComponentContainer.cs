@@ -82,5 +82,11 @@ namespace HOS.ECS.Component
             Array.Resize(ref _components, newCapacity);
             Array.Resize(ref _indexToEntity, newCapacity);
         }
+
+        public IEnumerable<(Guid, T)> EnumerateAll()
+        {
+            for (int i = 0; i < _components.Length; i++)
+                yield return (_indexToEntity[i], _components[i]);
+        }
     }
 }

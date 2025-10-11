@@ -98,22 +98,5 @@ namespace HOS.ECS.Component
             var span = container.GetSpan();
             return span.Length;
         }
-
-        // Быстрые запросы
-        public IEnumerable<Guid> QueryEntitiesWith<T1, T2>() where T1 : struct where T2 : struct
-        {
-            var container1 = GetContainer<T1>();
-            var container2 = GetContainer<T2>();
-            
-            var span = container1.GetSpan();
-            for (int i = 0; i < span.Length; i++)
-            {
-                var entityId = span.GetEntity(i);
-                if (container2.Has(entityId))
-                {
-                    yield return entityId;
-                }
-            }
-        }
     }
 }

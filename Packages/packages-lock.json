@@ -301,6 +301,13 @@
       },
       "url": "https://packages.unity.com"
     },
+    "com.yogurtgaming2.moonsharp": {
+      "version": "https://github.com/yogurtgaming2/moonsharp-revived.git#unity",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {},
+      "hash": "0b4bfb6ec48d4dee2a3d70021d8e8a295570d106"
+    },
     "com.unity.modules.accessibility": {
       "version": "1.0.0",
       "depth": 0,
