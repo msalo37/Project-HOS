@@ -5,7 +5,7 @@ namespace HOS.Machines
 {
     public class GlobalVars
     {
-        private Dictionary<BasicDirectories, Guid> folderDict;
+        private static Dictionary<BasicDirectories, Guid> folderDict;
 
         public GlobalVars()
         {
@@ -16,24 +16,31 @@ namespace HOS.Machines
             }
         }
 
-        public IEnumerable<KeyValuePair<BasicDirectories, Guid>> EnumerateDirectories()
+        public static IEnumerable<KeyValuePair<BasicDirectories, Guid>> EnumerateDirectories()
         {
             foreach (var kvp in folderDict)
                 yield return kvp;
         }
 
-        public Guid GetDirectoryGuid(BasicDirectories directory)
+        public static Guid GetDirectoryGuid(BasicDirectories directory)
         {
             return folderDict[directory];
         }
 
-        public enum BasicDirectories
+        private static readonly List<string> ReservedNames = new() { ".", "..", "/", "*" };
+
+        public static bool IsNameReserved(string name)
         {
-            Main = 0,
-            Bin = 1,
-            Home = 2,
-            Log = 3,
-            WWW = 4,
+            return ReservedNames.Contains(name);
         }
+    }
+    
+    public enum BasicDirectories
+    {
+        Main = 0,
+        Bin = 1,
+        Home = 2,
+        Log = 3,
+        WWW = 4,
     }
 }

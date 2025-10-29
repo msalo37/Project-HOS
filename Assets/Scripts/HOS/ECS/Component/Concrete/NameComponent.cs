@@ -10,7 +10,7 @@ namespace HOS.ECS.Component
             this.name = new(name);
         }
 
-        public FixedString128Bytes name;
+        public FixedString512Bytes name;
 
         public override string ToString()
         {

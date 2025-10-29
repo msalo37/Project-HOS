@@ -30,6 +30,7 @@ namespace HOS.ECS.Entity
             foreach (var dict in data.Values)
                 if (dict.TryGetValue(guid, out var result))
                 {
+                    entity = result;
                     entDict = dict;
                     return result != null;
                 }

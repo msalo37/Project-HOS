@@ -85,8 +85,10 @@ namespace HOS.ECS.Component
 
         public IEnumerable<(Guid, T)> EnumerateAll()
         {
-            for (int i = 0; i < _components.Length; i++)
-                yield return (_indexToEntity[i], _components[i]);
+            foreach (var kvp in _entityToIndex)
+            {
+                yield return (kvp.Key, _components[kvp.Value]);
+            }
         }
     }
 }

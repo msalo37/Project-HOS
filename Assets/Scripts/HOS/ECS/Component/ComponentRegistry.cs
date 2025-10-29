@@ -25,38 +25,36 @@ namespace HOS.ECS.Component
         }
 
         // Добавить компонент
-        public ref T AddComponent<T>(Guid entityId, T component = default) where T : struct
+        public ref T AddComponent<T>(Guid entityId, T component = default) where T : unmanaged
         {
             return ref GetContainer<T>().Add(entityId, component);
         }
 
         // Получить компонент
-        public ref T GetComponent<T>(Guid entityId) where T : struct
+        public ref T GetComponent<T>(Guid entityId) where T : unmanaged
         {
             return ref GetContainer<T>().Get(entityId);
         }
 
-        public bool TryGetComponent<T>(Guid entityId, out T component) where T : struct
+        public bool TryGetComponent<T>(Guid entityId, out T component) where T : unmanaged
         {
             return GetContainer<T>().TryGet(entityId, out component);
         }
 
         // Проверить наличие компонента
-        public bool HasComponent<T>(Guid entityId) where T : struct
+        public bool HasComponent<T>(Guid entityId) where T : unmanaged
         {
             return GetContainer<T>().Has(entityId);
         }
 
         // Удалить компонент
-        public void RemoveComponent<T>(Guid entityId) where T : struct
+        public void RemoveComponent<T>(Guid entityId) where T : unmanaged
         {
             GetContainer<T>().Remove(entityId);
         }
 
-        // Альтернативная версия без рефлексии (если добавим базовый интерфейс)
         public void RemoveAllComponentsFast(Guid entityId)
         {
-            // Эта версия будет работать если добавим не-generic интерфейс
             foreach (var container in _containers.Values)
             {
                 if (container is IComponentContainerBase baseContainer)

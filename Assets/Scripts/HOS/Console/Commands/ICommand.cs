@@ -6,74 +6,38 @@ namespace HOS.Commands
 {
     public interface ICommand
     {
-        public void Execute(string[] args);
+        public CommandExecutionExitCode Execute(string[] args);
+    }
+    
+    public enum CommandExecutionExitCode
+    {
+        Success = 0,
+        FileNotExecutable = 1,
+        CommandNotExist = 2,
+        UnknownError = 3,
+        InvalidArguments = 4,
+        FileOrDirectoryNotExist = 5,
+        DirectoryAlreadyExists = 6,
+        FileOrDirectoryNameReserved = 7,
+        DirectoryIsNotEmpty = 8,
+        AccessDenied = 9,
+        RecursiveDeleteFailed = 10,
     }
 
+    public delegate CommandExecutionExitCode CommandExecution(string[] args);
+    
     public class FunctionCommand : ICommand
     {
-        public FunctionCommand(Action<string[]> func)
+        public FunctionCommand(CommandExecution func)
         {
             this.func = func;
         }
 
-        private Action<string[]> func;
+        private CommandExecution func;
 
-        public void Execute(string[] args)
+        public CommandExecutionExitCode Execute(string[] args)
         {
-            func.Invoke(args);
-        }
-    }
-
-    public interface IFileContent
-    {
-        public string GetContent();
-        public void EditContent(string newVal);
-    }
-
-    public struct FileContentComponent : IFileContent
-    {
-        public FileContentComponent(string val)
-        {
-            content = new(val);
-        }
-
-        public FixedString4096Bytes content;
-
-        public void EditContent(string newVal)
-        {
-            content = new(newVal);
-        }
-
-        public string GetContent()
-        {
-            return content.ToString();
-        }
-    }
-
-    public struct FileContentReferenceComponent : IFileContent
-    {
-        private string resourcePath;
-
-        public void EditContent(string newVal) { }
-
-        public string GetContent()
-        {
-            return Resources.Load<TextAsset>(resourcePath).text;
-        }
-    }
-
-    public struct FileContentResourcesReferenceComponent : IFileContent
-    {
-        public int metaKey; // TODO create MetaDataStorage
-
-        public void EditContent(string newVal)
-        {
-            // edit
-        }
-
-        public string GetContent()
-        {
-            // get
+            return func(args);
         }
     }
 }

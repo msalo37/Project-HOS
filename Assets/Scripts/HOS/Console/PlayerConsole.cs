@@ -5,7 +5,7 @@ using System.Text;
 
 namespace HOS.Console
 {
-    public class Console
+    public class PlayerConsole
     {
         private const int MaxLines = 256;
 
@@ -25,7 +25,6 @@ namespace HOS.Console
         {
             if (consoleQueue.Count >= MaxLines)
                 consoleQueue.Dequeue();
-
             consoleQueue.Enqueue(line);
             SetDirty();
         }
@@ -45,6 +44,7 @@ namespace HOS.Console
                 foreach (var str in consoleQueue)
                 {
                     stringBuilder.Append(str);
+                    stringBuilder.Append("\n");
                 }
                 isDirty = false;
             }
