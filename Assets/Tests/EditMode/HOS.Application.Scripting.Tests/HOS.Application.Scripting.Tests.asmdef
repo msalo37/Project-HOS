@@ -1,0 +1,25 @@
+{
+    "name": "HOS.Application.Scripting.Tests",
+    "rootNamespace": "HOS.Application.Scripting.Tests",
+    "references": [
+        "HOS.Domain",
+        "HOS.Application",
+        "HOS.Scripting"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false,
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ]
+}

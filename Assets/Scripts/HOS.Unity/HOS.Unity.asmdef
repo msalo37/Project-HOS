@@ -1,0 +1,22 @@
+{
+    "name": "HOS.Unity",
+    "rootNamespace": "HOS.Unity",
+    "references": [
+        "HOS.Domain",
+        "HOS.Application",
+        "HOS.Scripting",
+        "MoonSharp",
+        "Zenject",
+        "Unity.TextMeshPro",
+        "UnityEngine.UI"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
