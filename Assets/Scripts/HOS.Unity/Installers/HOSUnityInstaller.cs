@@ -2,6 +2,7 @@ using HOS.Application.Execution;
 using HOS.Application.Shell;
 using HOS.Scripting;
 using HOS.Unity.Bootstrap;
+using HOS.Application.Remote;
 using Zenject;
 
 namespace HOS.Unity.Installers
@@ -19,6 +20,7 @@ namespace HOS.Unity.Installers
 
             Container.Bind<CommandLineParser>().AsSingle();
             Container.Bind<ExecutableResolver>().AsSingle();
+            Container.Bind<RemoteAccessService>().AsSingle();
             Container.Bind<LuaRuntimeOptions>().AsSingle();
             Container.Bind<IProgramRuntime>().To<LuaProgramRuntime>().AsSingle();
             Container.Bind<ShellEngine>().AsSingle();

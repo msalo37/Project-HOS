@@ -1,6 +1,7 @@
 using System;
 using HOS.Application.Shell;
 using HOS.Domain.FileSystem;
+using HOS.Application.Remote;
 
 namespace HOS.Application.Execution
 {
@@ -10,21 +11,30 @@ namespace HOS.Application.Execution
         private readonly ExecutableResolver resolver;
         private readonly IProgramRuntime runtime;
         private readonly PlayerShellContext shell;
+        private readonly RemoteAccessService remoteAccess;
 
         public ShellEngine(
             PlayerShellContext shell,
             IProgramRuntime runtime,
             CommandLineParser parser = null,
-            ExecutableResolver resolver = null)
+            ExecutableResolver resolver = null,
+            RemoteAccessService remoteAccess = null)
         {
             this.shell = shell ?? throw new ArgumentNullException(nameof(shell));
             this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
             this.parser = parser ?? new CommandLineParser();
             this.resolver = resolver ?? new ExecutableResolver();
+            this.remoteAccess = remoteAccess ?? new RemoteAccessService(shell);
         }
+
+        public bool IsAwaitingInput => remoteAccess.HasPendingLogin;
+        public bool IsSecretInput => remoteAccess.IsSecretInput;
+        public string InteractionPrompt => remoteAccess.InteractionPrompt;
 
         public CommandResult Execute(string input)
         {
+            if (remoteAccess.HasPendingLogin)
+                return remoteAccess.SubmitInteraction(input);
             var parsed = parser.Parse(input);
             if (parsed.IsFailure)
                 return CommandResult.Failure(2, $"shell: {FormatParseError(parsed.Error)}");
@@ -34,9 +44,10 @@ namespace HOS.Application.Execution
             if (executable.IsFailure)
                 return FormatResolutionFailure(invocation.Name, executable.Error);
 
-            var machine = shell.CurrentMachine;
-            var access = shell.CreateAccessContext();
-            var source = machine.FileSystem.ReadFile(executable.Value.NodeId, access);
+            if (!shell.World.TryGetMachine(executable.Value.MachineId, out var executionMachine))
+                return CommandResult.Failure(126, $"{invocation.Name}: execution machine unavailable");
+            var executionAccess = executionMachine.Users.CreateAccessContext(executable.Value.UserId);
+            var source = executionMachine.FileSystem.ReadFile(executable.Value.NodeId, executionAccess);
             if (source.IsFailure)
             {
                 return CommandResult.Failure(
@@ -44,10 +55,10 @@ namespace HOS.Application.Execution
                     $"{invocation.Name}: {FormatFileSystemError(source.Error)}");
             }
 
-            var started = machine.StartProcess(
+            var started = executionMachine.StartProcess(
                 executable.Value.NodeId,
                 invocation.Name,
-                access);
+                executionAccess);
             if (started.IsFailure)
                 return CommandResult.Failure(126, $"{invocation.Name}: cannot start process");
 
@@ -58,8 +69,11 @@ namespace HOS.Application.Execution
                     new ProgramExecutionContext(
                         shell.World,
                         shell,
-                        machine,
-                        started.Value),
+                        executionMachine,
+                        shell.CurrentMachine,
+                        executable.Value.UserId,
+                        started.Value,
+                        remoteAccess),
                     source.Value.ReadUtf8(),
                     invocation.Arguments);
             }
@@ -70,11 +84,11 @@ namespace HOS.Application.Execution
                     $"{invocation.Name}: runtime failure: {exception.Message}");
             }
 
-            machine.Processes.Exit(
+            executionMachine.Processes.Exit(
                 started.Value,
                 result.ExitCode,
-                shell.CurrentUserId,
-                access.IsKernel);
+                executable.Value.UserId,
+                executionAccess.IsKernel);
             return result;
         }
 

@@ -5,6 +5,7 @@ using HOS.Domain.FileSystem;
 using HOS.Domain.Identity;
 using HOS.Domain.Machines;
 using HOS.Domain.Network;
+using HOS.Domain.Services;
 using UnityEngine;
 
 namespace HOS.Unity.Bootstrap
@@ -99,14 +100,51 @@ namespace HOS.Unity.Bootstrap
             var shell = new PlayerShellContext(world, machine.Id, playerUser, playerHome);
             shell.SetEnvironment("HOME", "/home/player");
             shell.SetEnvironment("PATH", "/bin:/usr/bin");
+            var developmentServer = CreateDevelopmentServer(world, machine);
 
             return new GameBootstrapResult(
                 world,
                 machine,
+                developmentServer,
                 shell,
                 playerUser,
                 bin,
                 playerHome);
+        }
+
+        private static Machine CreateDevelopmentServer(GameWorld world, Machine playerMachine)
+        {
+            VirtualIpAddress.TryParse("10.0.0.2", out var address);
+            var machine = Machine.Create(MachineId.New(), "dev-server", address);
+            RequireSuccess(world.AddMachine(machine), "register development server");
+            world.Network.AddBidirectionalRoute(playerMachine.Id, machine.Id);
+
+            var root = machine.Users.CreateAccessContext(machine.RootUserId, true);
+            var rootOwnership = new FileOwnership(machine.RootUserId, machine.RootGroupId);
+            var users = RequireValue(machine.Users.CreateGroup("users"), "create remote users group");
+            var guest = RequireValue(machine.Users.CreateUser("guest", users), "create guest user");
+            machine.Credentials.SetPassword(guest, "guest");
+            var guestOwnership = new FileOwnership(guest, users);
+
+            var home = CreateDirectory(machine.FileSystem, machine.FileSystem.RootId, "home", rootOwnership, FilePermissions.DefaultDirectory, root);
+            var guestHome = CreateDirectory(machine.FileSystem, home, "guest", guestOwnership, FilePermissions.DefaultDirectory, root);
+            RequireSuccess(machine.FileSystem.CreateFile(
+                guestHome, "test.lua", guestOwnership, ExecutablePermissions,
+                FileContent.FromUtf8("function execute(args) hos.stdout('remote program on ' .. hos.shell.hostname()) return 0 end"), root),
+                "create remote test program");
+            RequireSuccess(machine.FileSystem.CreateFile(
+                guestHome, "welcome.txt", guestOwnership, FilePermissions.DefaultFile,
+                FileContent.FromUtf8("Welcome to dev-server."), root), "create remote welcome file");
+
+            var ssh = RequireValue(machine.Services.Add(
+                "openssh", machine.RootUserId, new PortBinding(22, TransportProtocol.Tcp),
+                ServiceProtocol.Ssh, "9.1", true), "add ssh service");
+            RequireSuccess(machine.Services.Start(ssh, machine.RootUserId), "start ssh service");
+            var backdoor = RequireValue(machine.Services.Add(
+                "maintenance", machine.RootUserId, new PortBinding(31337, TransportProtocol.Tcp),
+                ServiceProtocol.Backdoor, "1.0", false, guest), "add backdoor service");
+            RequireSuccess(machine.Services.Start(backdoor, machine.RootUserId), "start backdoor service");
+            return machine;
         }
 
         private static void InstallStandardCommands(

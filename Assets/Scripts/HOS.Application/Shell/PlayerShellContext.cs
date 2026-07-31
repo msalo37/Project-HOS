@@ -4,6 +4,7 @@ using HOS.Domain.Common;
 using HOS.Domain.FileSystem;
 using HOS.Domain.Identity;
 using HOS.Domain.Machines;
+using HOS.Domain.Network;
 
 namespace HOS.Application.Shell
 {
@@ -11,6 +12,9 @@ namespace HOS.Application.Shell
     {
         private readonly Dictionary<string, string> environment =
             new Dictionary<string, string>(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> localEnvironment =
+            new Dictionary<string, string>(StringComparer.Ordinal);
+        private readonly Stack<ShellLocation> locations = new Stack<ShellLocation>();
 
         public PlayerShellContext(
             GameWorld world,
@@ -25,19 +29,70 @@ namespace HOS.Application.Shell
                 throw new ArgumentException("User is not registered on the local machine.", nameof(userId));
 
             LocalMachineId = localMachineId;
+            LocalUserId = userId;
+            LocalWorkingDirectory = initialWorkingDirectory ?? machine.FileSystem.RootId;
             CurrentMachineId = localMachineId;
             CurrentUserId = userId;
             WorkingDirectory = initialWorkingDirectory ?? machine.FileSystem.RootId;
             environment["PATH"] = "/bin:/usr/bin";
             environment["HOME"] = "/";
+            localEnvironment["PATH"] = "/bin:/usr/bin";
+            localEnvironment["HOME"] = "/";
         }
 
         public GameWorld World { get; }
         public MachineId LocalMachineId { get; }
+        public UserId LocalUserId { get; }
+        public Machine LocalMachine => World.TryGetMachine(LocalMachineId, out var machine) ? machine : throw new InvalidOperationException();
+        public NodeId LocalWorkingDirectory { get; private set; }
         public MachineId CurrentMachineId { get; private set; }
         public UserId CurrentUserId { get; private set; }
         public NodeId WorkingDirectory { get; private set; }
         public bool IsRemote => CurrentMachineId != LocalMachineId;
+        public ConnectionId? CurrentConnectionId { get; private set; }
+
+        public void EnterRemote(AccessGrant grant)
+        {
+            if (grant == null || !World.TryGetMachine(grant.TargetMachineId, out var machine) ||
+                !machine.Users.TryGetUser(grant.UserId, out _))
+                throw new InvalidOperationException("Invalid remote access grant.");
+            locations.Push(new ShellLocation(
+                CurrentMachineId, CurrentUserId, WorkingDirectory,
+                new Dictionary<string, string>(environment), CurrentConnectionId));
+            CurrentMachineId = grant.TargetMachineId;
+            CurrentUserId = grant.UserId;
+            WorkingDirectory = grant.HomeDirectoryId;
+            CurrentConnectionId = grant.ConnectionId;
+            environment.Clear();
+            environment["HOME"] = machine.FileSystem.GetPath(grant.HomeDirectoryId).Value;
+            environment["PATH"] = "/bin:/usr/bin";
+        }
+
+        public bool ExitRemote()
+        {
+            if (locations.Count == 0) return false;
+            if (CurrentConnectionId.HasValue)
+                World.Network.Disconnect(CurrentConnectionId.Value);
+            var location = locations.Pop();
+            CurrentMachineId = location.MachineId;
+            CurrentUserId = location.UserId;
+            WorkingDirectory = location.WorkingDirectory;
+            CurrentConnectionId = location.ConnectionId;
+            environment.Clear();
+            foreach (var pair in location.Environment) environment[pair.Key] = pair.Value;
+            return true;
+        }
+
+        private sealed class ShellLocation
+        {
+            public ShellLocation(MachineId machineId, UserId userId, NodeId workingDirectory, Dictionary<string, string> environment, ConnectionId? connectionId)
+            { MachineId = machineId; UserId = userId; WorkingDirectory = workingDirectory; Environment = environment; ConnectionId = connectionId; }
+            public MachineId MachineId { get; }
+            public UserId UserId { get; }
+            public NodeId WorkingDirectory { get; }
+            public Dictionary<string, string> Environment { get; }
+            public ConnectionId? ConnectionId { get; }
+        }
 
         public Machine CurrentMachine
         {
@@ -62,6 +117,13 @@ namespace HOS.Application.Shell
                 : null;
         }
 
+        public string GetLocalEnvironment(string name)
+        {
+            return name != null && localEnvironment.TryGetValue(name, out var value)
+                ? value
+                : null;
+        }
+
         public void SetEnvironment(string name, string value)
         {
             if (string.IsNullOrWhiteSpace(name))
@@ -71,6 +133,13 @@ namespace HOS.Application.Shell
                 environment.Remove(name);
             else
                 environment[name] = value;
+            if (!IsRemote)
+            {
+                if (value == null)
+                    localEnvironment.Remove(name);
+                else
+                    localEnvironment[name] = value;
+            }
         }
 
         public Result<Unit, FileSystemError> ChangeDirectory(VirtualPath path)
@@ -95,6 +164,8 @@ namespace HOS.Application.Shell
                 return permission;
 
             WorkingDirectory = resolved.Value;
+            if (!IsRemote)
+                LocalWorkingDirectory = WorkingDirectory;
             return Result<Unit, FileSystemError>.Success(Unit.Value);
         }
     }

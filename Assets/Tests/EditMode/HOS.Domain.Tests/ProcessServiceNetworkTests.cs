@@ -81,6 +81,34 @@ namespace HOS.Domain.Tests
             Assert.That(connection.Error, Is.EqualTo(NetworkError.PortClosed));
         }
 
+        [Test]
+        public void CredentialsAreVerifiedWithoutStoringPlainTextApi()
+        {
+            var machine = CreateMachine("host", "10.0.0.1");
+            machine.Credentials.SetPassword(machine.RootUserId, "secret");
+
+            Assert.That(machine.Credentials.VerifyPassword(machine.RootUserId, "secret"), Is.True);
+            Assert.That(machine.Credentials.VerifyPassword(machine.RootUserId, "wrong"), Is.False);
+        }
+
+        [Test]
+        public void ConnectionCanBeClosed()
+        {
+            var source = CreateMachine("source", "10.0.0.1");
+            var destination = CreateMachine("destination", "10.0.0.2");
+            var binding = new PortBinding(22, TransportProtocol.Tcp);
+            var service = destination.Services.Add("ssh", destination.RootUserId, binding).Value;
+            destination.Services.Start(service, destination.RootUserId);
+            var world = new GameWorld();
+            world.AddMachine(source);
+            world.AddMachine(destination);
+            world.Network.AddBidirectionalRoute(source.Id, destination.Id);
+            var connection = world.Network.Connect(source.Id, destination.Address, binding).Value;
+
+            Assert.That(world.Network.Disconnect(connection).IsSuccess, Is.True);
+            Assert.That(world.Network.TryGetConnection(connection, out _), Is.False);
+        }
+
         private static Machine CreateMachine(string hostname, string addressText)
         {
             VirtualIpAddress.TryParse(addressText, out var address);

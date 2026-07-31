@@ -39,6 +39,7 @@ namespace HOS.Domain.Machines
             RootUserId = rootUserId;
             RootGroupId = rootGroupId;
             FileSystem = fileSystem;
+            Credentials = new CredentialStore();
             Processes = new ProcessTable();
             Services = new ServiceManager();
         }
@@ -50,6 +51,7 @@ namespace HOS.Domain.Machines
         public UserId RootUserId { get; }
         public GroupId RootGroupId { get; }
         public VirtualFileSystem FileSystem { get; }
+        public CredentialStore Credentials { get; }
         public ProcessTable Processes { get; }
         public ServiceManager Services { get; }
 

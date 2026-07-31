@@ -17,6 +17,8 @@ namespace HOS.Scripting
                 (_, __) => DynValue.NewString(state.Context.Machine.Hostname),
                 "hos.shell.hostname");
             api["user"] = DynValue.NewCallback((_, __) => CurrentUser(state), "hos.shell.user");
+            api["disconnect"] = DynValue.NewCallback((_, __) =>
+                DynValue.NewBoolean(state.Context.Shell.ExitRemote()), "hos.shell.disconnect");
             return api;
         }
 

@@ -4,6 +4,7 @@ using HOS.Application.Shell;
 using HOS.Domain.Common;
 using HOS.Domain.FileSystem;
 using HOS.Domain.Identity;
+using HOS.Domain.Machines;
 
 namespace HOS.Application.Execution
 {
@@ -17,12 +18,16 @@ namespace HOS.Application.Execution
 
     public readonly struct ResolvedExecutable
     {
-        public ResolvedExecutable(NodeId nodeId, string path)
+        public ResolvedExecutable(MachineId machineId, UserId userId, NodeId nodeId, string path)
         {
+            MachineId = machineId;
+            UserId = userId;
             NodeId = nodeId;
             Path = path;
         }
 
+        public MachineId MachineId { get; }
+        public UserId UserId { get; }
         public NodeId NodeId { get; }
         public string Path { get; }
     }
@@ -39,7 +44,16 @@ namespace HOS.Application.Execution
                     ExecutableResolutionError.InvalidPath);
             }
 
-            var candidates = BuildCandidates(commandName, shell.GetEnvironment("PATH"));
+            var explicitPath = commandName.IndexOf('/') >= 0;
+            var candidates = BuildCandidates(
+                commandName,
+                commandName.IndexOf('/') >= 0
+                    ? shell.GetEnvironment("PATH")
+                    : shell.GetLocalEnvironment("PATH"));
+            var machine = explicitPath ? shell.CurrentMachine : shell.LocalMachine;
+            var userId = explicitPath ? shell.CurrentUserId : shell.LocalUserId;
+            var workingDirectory = explicitPath ? shell.WorkingDirectory : shell.LocalWorkingDirectory;
+            var access = machine.Users.CreateAccessContext(userId);
             var accessDenied = false;
             var notExecutable = false;
 
@@ -49,10 +63,8 @@ namespace HOS.Application.Execution
                 if (parsed.IsFailure)
                     continue;
 
-                var machine = shell.CurrentMachine;
-                var access = shell.CreateAccessContext();
                 var resolved = machine.FileSystem.Resolve(
-                    shell.WorkingDirectory,
+                    workingDirectory,
                     parsed.Value,
                     access);
 
@@ -81,7 +93,7 @@ namespace HOS.Application.Execution
                 }
 
                 return Result<ResolvedExecutable, ExecutableResolutionError>.Success(
-                    new ResolvedExecutable(resolved.Value, candidate));
+                    new ResolvedExecutable(machine.Id, userId, resolved.Value, candidate));
             }
 
             if (accessDenied)

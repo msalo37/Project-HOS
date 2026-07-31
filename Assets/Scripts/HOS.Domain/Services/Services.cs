@@ -5,6 +5,7 @@ using HOS.Domain.Identity;
 
 namespace HOS.Domain.Services
 {
+    public enum ServiceProtocol { Unknown, Ssh, Http, Ftp, Backdoor }
     public readonly struct ServiceId : IEquatable<ServiceId>
     {
         public ServiceId(Guid value) => Value = value;
@@ -67,12 +68,20 @@ namespace HOS.Domain.Services
             ServiceId id,
             string name,
             UserId owner,
-            PortBinding binding)
+            PortBinding binding,
+            ServiceProtocol protocol,
+            string version,
+            bool allowsPasswordAuthentication,
+            UserId? passwordlessUserId)
         {
             Id = id;
             Name = name;
             Owner = owner;
             Binding = binding;
+            Protocol = protocol;
+            Version = version ?? string.Empty;
+            AllowsPasswordAuthentication = allowsPasswordAuthentication;
+            PasswordlessUserId = passwordlessUserId;
             State = ServiceState.Stopped;
         }
 
@@ -80,6 +89,10 @@ namespace HOS.Domain.Services
         public string Name { get; }
         public UserId Owner { get; }
         public PortBinding Binding { get; }
+        public ServiceProtocol Protocol { get; }
+        public string Version { get; }
+        public bool AllowsPasswordAuthentication { get; }
+        public UserId? PasswordlessUserId { get; }
         public ServiceState State { get; internal set; }
     }
 
@@ -97,7 +110,11 @@ namespace HOS.Domain.Services
         public Result<ServiceId, ServiceError> Add(
             string name,
             UserId owner,
-            PortBinding binding)
+            PortBinding binding,
+            ServiceProtocol protocol = ServiceProtocol.Unknown,
+            string version = "",
+            bool allowsPasswordAuthentication = false,
+            UserId? passwordlessUserId = null)
         {
             if (string.IsNullOrWhiteSpace(name))
                 return Result<ServiceId, ServiceError>.Failure(ServiceError.InvalidName);
@@ -106,7 +123,7 @@ namespace HOS.Domain.Services
                     ServiceError.NameAlreadyExists);
 
             var id = ServiceId.New();
-            services.Add(id, new MachineService(id, name, owner, binding));
+            services.Add(id, new MachineService(id, name, owner, binding, protocol, version, allowsPasswordAuthentication, passwordlessUserId));
             byName.Add(name, id);
             return Result<ServiceId, ServiceError>.Success(id);
         }
@@ -154,6 +171,14 @@ namespace HOS.Domain.Services
 
             service = null;
             return false;
+        }
+
+        public IReadOnlyList<MachineService> ListListening()
+        {
+            var result = new List<MachineService>();
+            foreach (var id in listening.Values) result.Add(services[id]);
+            result.Sort((a, b) => a.Binding.Port.CompareTo(b.Binding.Port));
+            return result;
         }
     }
 }

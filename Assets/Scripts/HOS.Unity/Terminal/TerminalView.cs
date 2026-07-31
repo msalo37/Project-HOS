@@ -46,6 +46,7 @@ namespace HOS.Unity.Terminal
 
             history.Clear();
             AppendLine("HOS terminal ready. Type 'ls /bin' to list installed commands.");
+            RefreshInputMode();
             inputField.ActivateInputField();
         }
 
@@ -61,7 +62,8 @@ namespace HOS.Unity.Terminal
                 return CommandResult.Failure(1, "terminal is not initialized");
 
             input = input ?? string.Empty;
-            AppendLine(BuildPrompt() + " " + input);
+            var displayedInput = shellEngine.IsSecretInput ? new string('*', input.Length) : input;
+            AppendLine(BuildPrompt() + " " + displayedInput);
 
             CommandResult result;
             if (string.IsNullOrWhiteSpace(input))
@@ -75,11 +77,14 @@ namespace HOS.Unity.Terminal
                 AppendBlock(result.StandardError);
             }
 
+            RefreshInputMode();
             return result;
         }
 
         public string BuildPrompt()
         {
+            if (shellEngine != null && shellEngine.IsAwaitingInput)
+                return shellEngine.InteractionPrompt;
             if (shellContext == null)
                 return "$";
 
@@ -98,6 +103,16 @@ namespace HOS.Unity.Terminal
             inputField.text = string.Empty;
             inputField.ActivateInputField();
             inputField.Select();
+        }
+
+        private void RefreshInputMode()
+        {
+            if (inputField == null || shellEngine == null)
+                return;
+            inputField.contentType = shellEngine.IsSecretInput
+                ? TMP_InputField.ContentType.Password
+                : TMP_InputField.ContentType.Standard;
+            inputField.ForceLabelUpdate();
         }
 
         private void AppendBlock(string block)

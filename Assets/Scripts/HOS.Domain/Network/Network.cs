@@ -44,9 +44,20 @@ namespace HOS.Domain.Network
         public ConnectionId(Guid value) => Value = value;
         public Guid Value { get; }
         public static ConnectionId New() => new ConnectionId(Guid.NewGuid());
+        public static bool TryParse(string value, out ConnectionId id)
+        {
+            if (Guid.TryParse(value, out var parsed))
+            {
+                id = new ConnectionId(parsed);
+                return true;
+            }
+            id = default;
+            return false;
+        }
         public bool Equals(ConnectionId other) => Value.Equals(other.Value);
         public override bool Equals(object obj) => obj is ConnectionId other && Equals(other);
         public override int GetHashCode() => Value.GetHashCode();
+        public override string ToString() => Value.ToString("N");
     }
 
     public enum NetworkError
@@ -55,7 +66,8 @@ namespace HOS.Domain.Network
         DestinationNotFound,
         AddressAlreadyRegistered,
         RouteUnavailable,
-        PortClosed
+        PortClosed,
+        ConnectionNotFound
     }
 
     public sealed class NetworkConnection
@@ -132,6 +144,22 @@ namespace HOS.Domain.Network
                 new NetworkConnection(id, sourceId, destination.Id, endpoint));
             return Result<ConnectionId, NetworkError>.Success(id);
         }
+
+        public bool TryGetConnection(ConnectionId id, out NetworkConnection connection) =>
+            connections.TryGetValue(id, out connection);
+
+        public bool TryGetMachine(VirtualIpAddress address, out Machine machine) =>
+            machinesByAddress.TryGetValue(address, out machine);
+
+        public Result<Unit, NetworkError> Disconnect(ConnectionId id) =>
+            connections.Remove(id)
+                ? Result<Unit, NetworkError>.Success(Unit.Value)
+                : Result<Unit, NetworkError>.Failure(NetworkError.ConnectionNotFound);
+
+        public bool CanReach(MachineId sourceId, VirtualIpAddress address) =>
+            routes.ContainsKey(sourceId) &&
+            machinesByAddress.TryGetValue(address, out var destination) &&
+            HasRoute(sourceId, destination.Id);
 
         private bool HasRoute(MachineId source, MachineId destination)
         {

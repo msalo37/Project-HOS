@@ -31,6 +31,16 @@ namespace HOS.Unity.PlayMode.Tests
             Assert.That(cat.StandardOutput, Is.EqualTo("play mode works\n"));
             Assert.That(terminal.RenderedText, Does.Contain("play mode works"));
             Assert.That(terminal.BuildPrompt(), Is.EqualTo("player@player-pc:/home/player/smoke$"));
+
+            AssertSuccess(terminal.SubmitCommand("ssh 10.0.0.2 22"));
+            Assert.That(terminal.BuildPrompt(), Is.EqualTo("login:"));
+            AssertSuccess(terminal.SubmitCommand("guest"));
+            Assert.That(terminal.BuildPrompt(), Is.EqualTo("password:"));
+            AssertSuccess(terminal.SubmitCommand("guest"));
+            Assert.That(terminal.BuildPrompt(), Is.EqualTo("guest@dev-server:/home/guest$"));
+            var remote = terminal.SubmitCommand("./test.lua");
+            AssertSuccess(remote);
+            Assert.That(remote.StandardOutput, Does.Contain("dev-server"));
         }
 
         private static void AssertSuccess(HOS.Application.Shell.CommandResult result)

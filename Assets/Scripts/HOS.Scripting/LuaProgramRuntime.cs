@@ -92,6 +92,10 @@ namespace HOS.Scripting
             hos["fs"] = DynValue.NewTable(LuaFileSystemApi.Create(script, state));
             hos["shell"] = DynValue.NewTable(LuaShellApi.Create(script, state));
             hos["process"] = DynValue.NewTable(LuaProcessApi.Create(script, state));
+            hos["net"] = DynValue.NewTable(LuaNetworkApi.Create(script, state));
+            var local = new Table(script);
+            local["fs"] = DynValue.NewTable(LuaLocalFileSystemApi.Create(script, state));
+            hos["local"] = DynValue.NewTable(local);
             script.Globals["hos"] = DynValue.NewTable(hos);
         }
 

@@ -94,6 +94,13 @@ namespace HOS.Domain.Identity
         }
 
         public bool TryGetUser(UserId id, out UserAccount user) => users.TryGetValue(id, out user);
+        public bool TryGetUser(string name, out UserAccount user)
+        {
+            if (name != null && usersByName.TryGetValue(name, out var id))
+                return users.TryGetValue(id, out user);
+            user = null;
+            return false;
+        }
         public bool TryGetGroup(GroupId id, out UserGroup group) => groups.TryGetValue(id, out group);
 
         public AccessContext CreateAccessContext(UserId userId, bool isKernel = false)

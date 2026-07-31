@@ -15,6 +15,7 @@ namespace HOS.Unity.Tests
             "cat.lua",
             "cd.lua",
             "chmod.lua",
+            "exit.lua",
             "hostname.lua",
             "kill.lua",
             "ls.lua",
@@ -23,6 +24,8 @@ namespace HOS.Unity.Tests
             "ps.lua",
             "pwd.lua",
             "rm.lua",
+            "scan.lua",
+            "ssh.lua",
             "touch.lua",
             "whoami.lua",
             "write.lua"
@@ -33,7 +36,7 @@ namespace HOS.Unity.Tests
         {
             var game = new DefaultGameBootstrap().Create();
 
-            Assert.That(game.World.Machines.Count, Is.EqualTo(1));
+            Assert.That(game.World.Machines.Count, Is.EqualTo(2));
             Assert.That(game.PlayerMachine.Hostname, Is.EqualTo("player-pc"));
             Assert.That(game.PlayerMachine.Address.ToString(), Is.EqualTo("10.0.0.1"));
             Assert.That(game.Shell.GetEnvironment("HOME"), Is.EqualTo("/home/player"));
@@ -102,6 +105,45 @@ namespace HOS.Unity.Tests
             Assert.That(second.PlayerMachine, Is.Not.SameAs(first.PlayerMachine));
             Assert.That(second.PlayerMachine.Id, Is.Not.EqualTo(first.PlayerMachine.Id));
             Assert.That(second.PlayerHomeDirectoryId, Is.Not.EqualTo(first.PlayerHomeDirectoryId));
+        }
+
+        [Test]
+        public void LocalToolsOperateOnRemoteMachineAndExplicitProgramRunsRemotely()
+        {
+            var game = new DefaultGameBootstrap().Create();
+            var engine = new ShellEngine(game.Shell, new LuaProgramRuntime());
+
+            AssertSuccess(engine.Execute("ssh 10.0.0.2 22"));
+            Assert.That(engine.IsAwaitingInput, Is.True);
+            AssertSuccess(engine.Execute("guest"));
+            Assert.That(engine.IsSecretInput, Is.True);
+            AssertSuccess(engine.Execute("guest"));
+            Assert.That(game.Shell.CurrentMachine.Hostname, Is.EqualTo("dev-server"));
+
+            var cat = engine.Execute("cat welcome.txt");
+            var remoteProgram = engine.Execute("./test.lua");
+            AssertSuccess(cat);
+            AssertSuccess(remoteProgram);
+            Assert.That(cat.StandardOutput, Is.EqualTo("Welcome to dev-server.\n"));
+            Assert.That(remoteProgram.StandardOutput, Does.Contain("dev-server"));
+            Assert.That(game.PlayerMachine.Processes.List().Any(p => p.Name == "cat"), Is.True);
+            Assert.That(game.DevelopmentServer.Processes.List().Any(p => p.Name == "./test.lua"), Is.True);
+
+            AssertSuccess(engine.Execute("exit"));
+            Assert.That(game.Shell.CurrentMachine.Hostname, Is.EqualTo("player-pc"));
+        }
+
+        [Test]
+        public void PasswordlessServiceEntersRemoteMachine()
+        {
+            var game = new DefaultGameBootstrap().Create();
+            var engine = new ShellEngine(game.Shell, new LuaProgramRuntime());
+
+            var result = engine.Execute("ssh 10.0.0.2 31337");
+
+            AssertSuccess(result);
+            Assert.That(engine.IsAwaitingInput, Is.False);
+            Assert.That(game.Shell.CurrentMachine.Hostname, Is.EqualTo("dev-server"));
         }
 
         private static void AssertPathExists(

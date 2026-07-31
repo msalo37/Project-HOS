@@ -11,6 +11,7 @@ namespace HOS.Unity.Bootstrap
         public GameBootstrapResult(
             GameWorld world,
             Machine playerMachine,
+            Machine developmentServer,
             PlayerShellContext shell,
             UserId playerUserId,
             NodeId binDirectoryId,
@@ -18,6 +19,7 @@ namespace HOS.Unity.Bootstrap
         {
             World = world ?? throw new ArgumentNullException(nameof(world));
             PlayerMachine = playerMachine ?? throw new ArgumentNullException(nameof(playerMachine));
+            DevelopmentServer = developmentServer ?? throw new ArgumentNullException(nameof(developmentServer));
             Shell = shell ?? throw new ArgumentNullException(nameof(shell));
             PlayerUserId = playerUserId;
             BinDirectoryId = binDirectoryId;
@@ -26,6 +28,7 @@ namespace HOS.Unity.Bootstrap
 
         public GameWorld World { get; }
         public Machine PlayerMachine { get; }
+        public Machine DevelopmentServer { get; }
         public PlayerShellContext Shell { get; }
         public UserId PlayerUserId { get; }
         public NodeId BinDirectoryId { get; }
