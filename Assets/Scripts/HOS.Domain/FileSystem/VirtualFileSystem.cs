@@ -246,6 +246,46 @@ namespace HOS.Domain.FileSystem
             return Result<Unit, FileSystemError>.Success(Unit.Value);
         }
 
+        public Result<NodeId, FileSystemError> CopyFile(
+            NodeId sourceId,
+            NodeId destinationDirectoryId,
+            string destinationName,
+            FileOwnership ownership,
+            AccessContext access)
+        {
+            if (!nodes.TryGetValue(sourceId, out var rawSource))
+                return Result<NodeId, FileSystemError>.Failure(FileSystemError.NodeNotFound);
+            if (!(rawSource is RegularFileNode source))
+                return Result<NodeId, FileSystemError>.Failure(FileSystemError.NotAFile);
+            if (!Allows(source, access, PermissionBits.Read))
+                return Result<NodeId, FileSystemError>.Failure(FileSystemError.AccessDenied);
+
+            var validation = ValidateCreation(
+                destinationDirectoryId,
+                destinationName,
+                access);
+            if (validation.IsFailure)
+                return Result<NodeId, FileSystemError>.Failure(validation.Error);
+
+            source.Timestamps = source.Timestamps.WithAccessed(CurrentTime);
+            AddEvent(FileSystemAction.Read, sourceId, access);
+
+            var id = NodeId.New();
+            var copy = new RegularFileNode(
+                id,
+                destinationDirectoryId,
+                destinationName,
+                ownership,
+                source.Permissions,
+                new FileContent(source.Content.CopyBytes()),
+                CurrentTime);
+            nodes.Add(id, copy);
+            children[destinationDirectoryId].Add(destinationName, id);
+            TouchModified(destinationDirectoryId);
+            AddEvent(FileSystemAction.Copied, id, access);
+            return Result<NodeId, FileSystemError>.Success(id);
+        }
+
         public Result<Unit, FileSystemError> Move(
             NodeId nodeId,
             NodeId destinationDirectoryId,

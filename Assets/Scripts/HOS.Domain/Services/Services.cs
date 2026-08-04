@@ -5,7 +5,7 @@ using HOS.Domain.Identity;
 
 namespace HOS.Domain.Services
 {
-    public enum ServiceProtocol { Unknown, Ssh, Http, Ftp, Backdoor }
+    public enum ServiceProtocol { Unknown, Ssh, Http, Ftp, Backdoor, DevSync }
     public readonly struct ServiceId : IEquatable<ServiceId>
     {
         public ServiceId(Guid value) => Value = value;

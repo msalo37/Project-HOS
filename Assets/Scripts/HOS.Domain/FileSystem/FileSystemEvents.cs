@@ -8,6 +8,7 @@ namespace HOS.Domain.FileSystem
         Created,
         Read,
         Written,
+        Copied,
         Moved,
         Deleted,
         PermissionsChanged,

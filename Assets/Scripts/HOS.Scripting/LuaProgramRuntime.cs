@@ -15,13 +15,15 @@ namespace HOS.Scripting
             this.options = options ?? new LuaRuntimeOptions();
         }
 
-        public CommandResult Execute(
+        public ProgramStartResult Start(
             ProgramExecutionContext context,
-            string sourceCode,
+            ProgramImage image,
             IReadOnlyList<string> arguments)
         {
             if (context == null)
                 throw new ArgumentNullException(nameof(context));
+            if (image == null)
+                throw new ArgumentNullException(nameof(image));
 
             var state = new LuaExecutionState(context, options.MaximumOutputCharacters);
             var script = new Script(CoreModules.Preset_HardSandbox);
@@ -30,15 +32,16 @@ namespace HOS.Scripting
 
             try
             {
-                var chunk = script.LoadString(sourceCode ?? string.Empty, null, "program.lua");
+                var chunk = script.LoadString(image.ReadUtf8(), null, image.Path);
                 RunWithBudget(script, chunk);
 
                 var execute = script.Globals.Get("execute");
                 if (execute.Type != DataType.Function)
                 {
-                    return CommandResult.Failure(
-                        1,
-                        "lua: program must define function execute(args)");
+                    return ProgramStartResult.Completed(
+                        CommandResult.Failure(
+                            1,
+                            "lua: program must define function execute(args)"));
                 }
 
                 var argumentTable = new Table(script);
@@ -53,22 +56,26 @@ namespace HOS.Scripting
                     execute,
                     DynValue.NewTable(argumentTable));
                 var exitCode = state.RequestedExitCode ?? ToExitCode(result);
-                return new CommandResult(
-                    exitCode,
-                    state.StandardOutput,
-                    state.StandardError);
+                return ProgramStartResult.Completed(
+                    new CommandResult(
+                        exitCode,
+                        state.StandardOutput,
+                        state.StandardError));
             }
             catch (SyntaxErrorException exception)
             {
-                return CommandResult.Failure(1, "lua syntax error: " + exception.DecoratedMessage);
+                return ProgramStartResult.Completed(
+                    CommandResult.Failure(1, "lua syntax error: " + exception.DecoratedMessage));
             }
             catch (ScriptRuntimeException exception)
             {
-                return CommandResult.Failure(1, "lua runtime error: " + exception.DecoratedMessage);
+                return ProgramStartResult.Completed(
+                    CommandResult.Failure(1, "lua runtime error: " + exception.DecoratedMessage));
             }
             catch (LuaInstructionLimitException)
             {
-                return CommandResult.Failure(124, "lua: instruction limit exceeded");
+                return ProgramStartResult.Completed(
+                    CommandResult.Failure(124, "lua: instruction limit exceeded"));
             }
         }
 

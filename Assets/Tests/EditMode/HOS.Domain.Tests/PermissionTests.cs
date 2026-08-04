@@ -89,5 +89,63 @@ namespace HOS.Domain.Tests
             Assert.That(denied.IsFailure, Is.True);
             Assert.That(fileSystem.ChangeOwner(file, newOwnership, kernel).IsSuccess, Is.True);
         }
+
+        [Test]
+        public void CopyRequiresSourceReadAndDestinationWriteAccess()
+        {
+            var owner = UserId.New();
+            var intruder = UserId.New();
+            var group = GroupId.New();
+            var ownership = new FileOwnership(owner, group);
+            var fileSystem = new VirtualFileSystem(ownership);
+            var kernel = AccessContext.Kernel(owner);
+            var privateFile = fileSystem.CreateFile(
+                fileSystem.RootId,
+                "private",
+                ownership,
+                new FilePermissions(
+                    PermissionBits.Read | PermissionBits.Write,
+                    PermissionBits.None,
+                    PermissionBits.None),
+                FileContent.FromUtf8("secret"),
+                kernel).Value;
+            var publicDirectory = fileSystem.CreateDirectory(
+                fileSystem.RootId,
+                "public",
+                ownership,
+                new FilePermissions(
+                    PermissionBits.Read | PermissionBits.Write | PermissionBits.Execute,
+                    PermissionBits.Read | PermissionBits.Write | PermissionBits.Execute,
+                    PermissionBits.Read | PermissionBits.Write | PermissionBits.Execute),
+                kernel).Value;
+            var access = new AccessContext(intruder, new GroupId[0]);
+
+            var unreadable = fileSystem.CopyFile(
+                privateFile,
+                publicDirectory,
+                "copy",
+                new FileOwnership(intruder, GroupId.New()),
+                access);
+
+            Assert.That(unreadable.IsFailure, Is.True);
+            Assert.That(unreadable.Error, Is.EqualTo(FileSystemError.AccessDenied));
+
+            var readableFile = fileSystem.CreateFile(
+                fileSystem.RootId,
+                "readable",
+                ownership,
+                new FilePermissions(PermissionBits.Read, PermissionBits.Read, PermissionBits.Read),
+                FileContent.FromUtf8("visible"),
+                kernel).Value;
+            var unwritable = fileSystem.CopyFile(
+                readableFile,
+                fileSystem.RootId,
+                "blocked-copy",
+                new FileOwnership(intruder, GroupId.New()),
+                access);
+
+            Assert.That(unwritable.IsFailure, Is.True);
+            Assert.That(unwritable.Error, Is.EqualTo(FileSystemError.AccessDenied));
+        }
     }
 }

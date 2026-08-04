@@ -2,6 +2,9 @@ using System;
 using HOS.Application.Shell;
 using HOS.Domain.FileSystem;
 using HOS.Application.Remote;
+using HOS.Domain.Identity;
+using HOS.Domain.Machines;
+using HOS.Domain.Processes;
 
 namespace HOS.Application.Execution
 {
@@ -12,6 +15,7 @@ namespace HOS.Application.Execution
         private readonly IProgramRuntime runtime;
         private readonly PlayerShellContext shell;
         private readonly RemoteAccessService remoteAccess;
+        private ForegroundExecution foreground;
 
         public ShellEngine(
             PlayerShellContext shell,
@@ -30,9 +34,14 @@ namespace HOS.Application.Execution
         public bool IsAwaitingInput => remoteAccess.HasPendingLogin;
         public bool IsSecretInput => remoteAccess.IsSecretInput;
         public string InteractionPrompt => remoteAccess.InteractionPrompt;
+        public bool HasForegroundProgram => foreground != null;
+        public TerminalFrame ForegroundFrame => foreground?.Session.CurrentFrame;
+        public ProcessId? ForegroundProcessId => foreground?.ProcessId;
 
         public CommandResult Execute(string input)
         {
+            if (HasForegroundProgram)
+                return CommandResult.Failure(1, "shell: foreground program is active");
             if (remoteAccess.HasPendingLogin)
                 return remoteAccess.SubmitInteraction(input);
             var parsed = parser.Parse(input);
@@ -55,41 +64,125 @@ namespace HOS.Application.Execution
                     $"{invocation.Name}: {FormatFileSystemError(source.Error)}");
             }
 
-            var started = executionMachine.StartProcess(
+            var processStarted = executionMachine.StartProcess(
                 executable.Value.NodeId,
                 invocation.Name,
                 executionAccess);
-            if (started.IsFailure)
+            if (processStarted.IsFailure)
                 return CommandResult.Failure(126, $"{invocation.Name}: cannot start process");
 
-            CommandResult result;
+            ProgramStartResult startResult;
             try
             {
-                result = runtime.Execute(
+                startResult = runtime.Start(
                     new ProgramExecutionContext(
                         shell.World,
                         shell,
                         executionMachine,
                         shell.CurrentMachine,
                         executable.Value.UserId,
-                        started.Value,
+                        processStarted.Value,
                         remoteAccess),
-                    source.Value.ReadUtf8(),
+                    new ProgramImage(executable.Value.Path, source.Value),
                     invocation.Arguments);
             }
             catch (Exception exception)
             {
-                result = CommandResult.Failure(
-                    1,
-                    $"{invocation.Name}: runtime failure: {exception.Message}");
+                startResult = ProgramStartResult.Completed(
+                    CommandResult.Failure(
+                        1,
+                        $"{invocation.Name}: runtime failure: {exception.Message}"));
             }
 
+            if (startResult == null)
+            {
+                startResult = ProgramStartResult.Completed(
+                    CommandResult.Failure(1, $"{invocation.Name}: runtime returned no result"));
+            }
+
+            if (startResult.IsRunning)
+            {
+                foreground = new ForegroundExecution(
+                    startResult.Session,
+                    executionMachine,
+                    executable.Value.UserId,
+                    processStarted.Value,
+                    executionAccess.IsKernel);
+                return CommandResult.Success();
+            }
+
+            var result = startResult.Result ??
+                         CommandResult.Failure(1, $"{invocation.Name}: runtime returned no result");
             executionMachine.Processes.Exit(
-                started.Value,
+                processStarted.Value,
                 result.ExitCode,
                 executable.Value.UserId,
                 executionAccess.IsKernel);
             return result;
+        }
+
+        public ProgramSessionUpdate SendForegroundInput(ProgramInput input)
+        {
+            if (foreground == null)
+            {
+                return ProgramSessionUpdate.Exited(
+                    CommandResult.Failure(1, "shell: no foreground program"));
+            }
+
+            try
+            {
+                return ApplyForegroundUpdate(foreground.Session.HandleInput(input));
+            }
+            catch (Exception exception)
+            {
+                return ApplyForegroundUpdate(
+                    ProgramSessionUpdate.Exited(
+                        CommandResult.Failure(
+                            1,
+                            $"foreground program failure: {exception.Message}")));
+            }
+        }
+
+        public ProgramSessionUpdate SendForegroundSignal(ProgramSignal signal)
+        {
+            if (foreground == null)
+            {
+                return ProgramSessionUpdate.Exited(
+                    CommandResult.Failure(1, "shell: no foreground program"));
+            }
+
+            try
+            {
+                return ApplyForegroundUpdate(foreground.Session.HandleSignal(signal));
+            }
+            catch (Exception exception)
+            {
+                return ApplyForegroundUpdate(
+                    ProgramSessionUpdate.Exited(
+                        CommandResult.Failure(
+                            1,
+                            $"foreground program failure: {exception.Message}")));
+            }
+        }
+
+        private ProgramSessionUpdate ApplyForegroundUpdate(ProgramSessionUpdate update)
+        {
+            if (update == null)
+            {
+                update = ProgramSessionUpdate.Exited(
+                    CommandResult.Failure(1, "foreground program returned no update"));
+            }
+            if (!update.HasExited)
+                return update;
+
+            var completed = foreground;
+            foreground = null;
+            completed.Machine.Processes.Exit(
+                completed.ProcessId,
+                update.Result.ExitCode,
+                completed.UserId,
+                completed.IsKernel);
+            return update;
         }
 
         private static CommandResult FormatResolutionFailure(
@@ -140,6 +233,29 @@ namespace HOS.Application.Execution
                 default:
                     return "file or directory not found";
             }
+        }
+
+        private sealed class ForegroundExecution
+        {
+            public ForegroundExecution(
+                IProgramSession session,
+                Machine machine,
+                UserId userId,
+                ProcessId processId,
+                bool isKernel)
+            {
+                Session = session;
+                Machine = machine;
+                UserId = userId;
+                ProcessId = processId;
+                IsKernel = isKernel;
+            }
+
+            public IProgramSession Session { get; }
+            public Machine Machine { get; }
+            public UserId UserId { get; }
+            public ProcessId ProcessId { get; }
+            public bool IsKernel { get; }
         }
     }
 }

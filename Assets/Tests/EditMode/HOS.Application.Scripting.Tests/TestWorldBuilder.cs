@@ -71,6 +71,11 @@ namespace HOS.Application.Scripting.Tests
             return CreateExecutable(HomeId, name, source, PlayerOwnership);
         }
 
+        public ShellEngine CreateEngine(IProgramRuntime runtime)
+        {
+            return new ShellEngine(Shell, runtime);
+        }
+
         public NodeId CreateFile(
             NodeId parent,
             string name,
@@ -87,13 +92,32 @@ namespace HOS.Application.Scripting.Tests
                 RootAccess).Value;
         }
 
-        private NodeId CreateExecutable(
+        public NodeId CreateExecutable(
             NodeId parent,
             string name,
             string source,
             FileOwnership ownership)
         {
-            return CreateFile(parent, name, source, ownership, ExecutablePermissions);
+            return CreateExecutable(
+                parent,
+                name,
+                FileContent.FromUtf8(source),
+                ownership);
+        }
+
+        public NodeId CreateExecutable(
+            NodeId parent,
+            string name,
+            FileContent content,
+            FileOwnership ownership)
+        {
+            return Machine.FileSystem.CreateFile(
+                parent,
+                name,
+                ownership,
+                ExecutablePermissions,
+                content,
+                RootAccess).Value;
         }
 
         private NodeId CreateDirectory(

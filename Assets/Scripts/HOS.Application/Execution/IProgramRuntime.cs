@@ -5,9 +5,9 @@ namespace HOS.Application.Execution
 {
     public interface IProgramRuntime
     {
-        CommandResult Execute(
+        ProgramStartResult Start(
             ProgramExecutionContext context,
-            string sourceCode,
+            ProgramImage image,
             IReadOnlyList<string> arguments);
     }
 }

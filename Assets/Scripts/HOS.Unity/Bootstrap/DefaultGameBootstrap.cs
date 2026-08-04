@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using HOS.Application.Execution;
 using HOS.Application.Shell;
 using HOS.Domain.FileSystem;
 using HOS.Domain.Identity;
@@ -95,7 +96,10 @@ namespace HOS.Unity.Bootstrap
                 rootAccess);
 
             InstallStandardCommands(fileSystem, bin, rootOwnership, rootAccess);
+            InstallBuiltinPrograms(fileSystem, bin, rootOwnership, rootAccess);
             CreateReadme(fileSystem, playerHome, playerOwnership, rootAccess);
+            CreateDevSyncDocumentation(
+                fileSystem, playerHome, playerOwnership, rootAccess);
 
             var shell = new PlayerShellContext(world, machine.Id, playerUser, playerHome);
             shell.SetEnvironment("HOME", "/home/player");
@@ -123,11 +127,14 @@ namespace HOS.Unity.Bootstrap
             var rootOwnership = new FileOwnership(machine.RootUserId, machine.RootGroupId);
             var users = RequireValue(machine.Users.CreateGroup("users"), "create remote users group");
             var guest = RequireValue(machine.Users.CreateUser("guest", users), "create guest user");
+            var deploy = RequireValue(machine.Users.CreateUser("deploy", users), "create deploy user");
             machine.Credentials.SetPassword(guest, "guest");
             var guestOwnership = new FileOwnership(guest, users);
+            var deployOwnership = new FileOwnership(deploy, users);
 
             var home = CreateDirectory(machine.FileSystem, machine.FileSystem.RootId, "home", rootOwnership, FilePermissions.DefaultDirectory, root);
             var guestHome = CreateDirectory(machine.FileSystem, home, "guest", guestOwnership, FilePermissions.DefaultDirectory, root);
+            var deployHome = CreateDirectory(machine.FileSystem, home, "deploy", deployOwnership, FilePermissions.DefaultDirectory, root);
             RequireSuccess(machine.FileSystem.CreateFile(
                 guestHome, "test.lua", guestOwnership, ExecutablePermissions,
                 FileContent.FromUtf8("function execute(args) hos.stdout('remote program on ' .. hos.shell.hostname()) return 0 end"), root),
@@ -135,6 +142,10 @@ namespace HOS.Unity.Bootstrap
             RequireSuccess(machine.FileSystem.CreateFile(
                 guestHome, "welcome.txt", guestOwnership, FilePermissions.DefaultFile,
                 FileContent.FromUtf8("Welcome to dev-server."), root), "create remote welcome file");
+            RequireSuccess(machine.FileSystem.CreateFile(
+                deployHome, "objective.txt", deployOwnership, FilePermissions.DefaultFile,
+                FileContent.FromUtf8("Prototype objective reached through DevSync."), root),
+                "create deploy objective");
 
             var ssh = RequireValue(machine.Services.Add(
                 "openssh", machine.RootUserId, new PortBinding(22, TransportProtocol.Tcp),
@@ -144,7 +155,44 @@ namespace HOS.Unity.Bootstrap
                 "maintenance", machine.RootUserId, new PortBinding(31337, TransportProtocol.Tcp),
                 ServiceProtocol.Backdoor, "1.0", false, guest), "add backdoor service");
             RequireSuccess(machine.Services.Start(backdoor, machine.RootUserId), "start backdoor service");
+            var devSync = RequireValue(machine.Services.Add(
+                "devsync", deploy, new PortBinding(8080, TransportProtocol.Tcp),
+                ServiceProtocol.DevSync, "1.0"), "add DevSync service");
+            RequireSuccess(machine.Services.Start(devSync, deploy), "start DevSync service");
             return machine;
+        }
+
+        private static void CreateDevSyncDocumentation(
+            VirtualFileSystem fileSystem,
+            NodeId playerHome,
+            FileOwnership playerOwnership,
+            AccessContext rootAccess)
+        {
+            var docs = CreateDirectory(
+                fileSystem, playerHome, "docs", playerOwnership,
+                FilePermissions.DefaultDirectory, rootAccess);
+            const string protocol =
+                "DevSync 1.0 legacy protocol\n" +
+                "1. request { operation = 'challenge' }\n" +
+                "2. calculate legacy proof from the returned nonce\n" +
+                "3. request { operation = 'authenticate', proof = proof }\n" +
+                "4. request { operation = 'execute_job', token = token, payload = lua_source }\n";
+            const string checksum =
+                "function legacy_proof(nonce)\n" +
+                "  local checksum = 0\n" +
+                "  for i = 1, #nonce do\n" +
+                "    checksum = (checksum + string.byte(nonce, i) * i) % 65535\n" +
+                "  end\n" +
+                "  return tostring(checksum)\n" +
+                "end\n";
+            RequireSuccess(fileSystem.CreateFile(
+                docs, "devsync_protocol.txt", playerOwnership,
+                FilePermissions.DefaultFile, FileContent.FromUtf8(protocol), rootAccess),
+                "create DevSync protocol documentation");
+            RequireSuccess(fileSystem.CreateFile(
+                docs, "legacy_checksum.lua", playerOwnership,
+                FilePermissions.DefaultFile, FileContent.FromUtf8(checksum), rootAccess),
+                "create legacy checksum source");
         }
 
         private static void InstallStandardCommands(
@@ -175,6 +223,31 @@ namespace HOS.Unity.Bootstrap
             }
         }
 
+        private static void InstallBuiltinPrograms(
+            VirtualFileSystem fileSystem,
+            NodeId bin,
+            FileOwnership rootOwnership,
+            AccessContext rootAccess)
+        {
+            var nano = fileSystem.CreateFile(
+                bin,
+                "nano" + HosBinaryFormat.Extension,
+                rootOwnership,
+                ExecutablePermissions,
+                HosBinaryFormat.Create(NanoProgram.ProgramId),
+                rootAccess);
+            RequireSuccess(nano, "install nano HOS binary");
+
+            var sysinfo = fileSystem.CreateFile(
+                bin,
+                "sysinfo" + HosBinaryFormat.Extension,
+                rootOwnership,
+                ExecutablePermissions,
+                HosBinaryFormat.Create(SystemInfoProgram.ProgramId),
+                rootAccess);
+            RequireSuccess(sysinfo, "install sysinfo HOS binary");
+        }
+
         private static void CreateReadme(
             VirtualFileSystem fileSystem,
             NodeId playerHome,
@@ -183,7 +256,7 @@ namespace HOS.Unity.Bootstrap
         {
             const string content =
                 "Welcome to HOS.\n" +
-                "Commands are Lua programs stored in /bin.\n" +
+                "Commands are Lua programs or compiled .hos programs stored in /bin.\n" +
                 "Create your own .lua file, grant execute permission, and run it with ./name.\n";
 
             var created = fileSystem.CreateFile(

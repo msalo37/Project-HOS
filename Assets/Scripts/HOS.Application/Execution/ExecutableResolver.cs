@@ -116,12 +116,12 @@ namespace HOS.Application.Execution
             string commandName,
             string pathEnvironment)
         {
-            var suffix = commandName.EndsWith(".lua", StringComparison.Ordinal)
-                ? string.Empty
-                : ".lua";
-
             if (commandName.IndexOf('/') >= 0)
-                return new[] { commandName + suffix };
+            {
+                var explicitCandidates = new List<string>();
+                AddCandidates(explicitCandidates, commandName);
+                return explicitCandidates;
+            }
 
             var path = string.IsNullOrWhiteSpace(pathEnvironment)
                 ? "/bin"
@@ -129,12 +129,29 @@ namespace HOS.Application.Execution
             var directories = path.Split(
                 new[] { ':' },
                 StringSplitOptions.RemoveEmptyEntries);
-            var result = new List<string>(directories.Length);
+            var result = new List<string>(directories.Length * 3);
 
             foreach (var directory in directories)
-                result.Add(directory.TrimEnd('/') + "/" + commandName + suffix);
+                AddCandidates(result, directory.TrimEnd('/') + "/" + commandName);
 
             return result;
+        }
+
+        private static void AddCandidates(ICollection<string> candidates, string path)
+        {
+            candidates.Add(path);
+            if (HasExtension(path))
+                return;
+
+            candidates.Add(path + HosBinaryFormat.Extension);
+            candidates.Add(path + ".lua");
+        }
+
+        private static bool HasExtension(string path)
+        {
+            var lastSeparator = path.LastIndexOf('/');
+            var lastDot = path.LastIndexOf('.');
+            return lastDot > lastSeparator;
         }
     }
 }

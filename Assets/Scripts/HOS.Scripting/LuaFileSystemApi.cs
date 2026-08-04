@@ -1,4 +1,5 @@
 using System;
+using HOS.Application.Execution;
 using HOS.Domain.FileSystem;
 using HOS.Domain.Identity;
 using MoonSharp.Interpreter;
@@ -19,6 +20,7 @@ namespace HOS.Scripting
             api["create"] = Callback((_, args) => CreateFile(script, state, args), "hos.fs.create");
             api["mkdir"] = Callback((_, args) => CreateDirectory(script, state, args), "hos.fs.mkdir");
             api["remove"] = Callback((_, args) => Remove(script, state, args), "hos.fs.remove");
+            api["copy"] = Callback((_, args) => Copy(script, state, args), "hos.fs.copy");
             api["move"] = Callback((_, args) => Move(script, state, args), "hos.fs.move");
             api["chmod"] = Callback((_, args) => Chmod(script, state, args), "hos.fs.chmod");
             api["exists"] = Callback((_, args) => Exists(state, args), "hos.fs.exists");
@@ -97,9 +99,16 @@ namespace HOS.Scripting
             var content = state.Context.Machine.FileSystem.ReadFile(
                 nodeId,
                 state.Context.Shell.CreateAccessContext());
-            return content.IsSuccess
-                ? LuaApiHelpers.Success(DynValue.NewString(content.Value.ReadUtf8()))
-                : LuaApiHelpers.Failure(script, content.Error);
+            if (content.IsFailure)
+                return LuaApiHelpers.Failure(script, content.Error);
+
+            var display = path.EndsWith(
+                              HosBinaryFormat.Extension,
+                              StringComparison.OrdinalIgnoreCase) ||
+                          HosBinaryFormat.IsBinary(content.Value)
+                ? HosBinaryFormat.ToDisplayString(content.Value)
+                : content.Value.ReadUtf8();
+            return LuaApiHelpers.Success(DynValue.NewString(display));
         }
 
         private static DynValue Write(
@@ -284,6 +293,63 @@ namespace HOS.Scripting
             return moved.IsSuccess
                 ? LuaApiHelpers.Success()
                 : LuaApiHelpers.Failure(script, moved.Error);
+        }
+
+        private static DynValue Copy(
+            Script script,
+            LuaExecutionState state,
+            CallbackArguments arguments)
+        {
+            var sourcePath = LuaApiHelpers.RequiredString(arguments, 0, "hos.fs.copy");
+            var destinationPath = LuaApiHelpers.RequiredString(arguments, 1, "hos.fs.copy");
+            if (!LuaApiHelpers.TryResolve(state, sourcePath, out var sourceId, out var sourceError))
+                return LuaApiHelpers.Failure(script, sourceError);
+
+            var fileSystem = state.Context.Machine.FileSystem;
+            var sourceEntry = fileSystem.Stat(sourceId);
+            if (sourceEntry.IsFailure)
+                return LuaApiHelpers.Failure(script, sourceEntry.Error);
+
+            NodeId destinationParent;
+            string destinationName;
+            if (LuaApiHelpers.TryResolve(
+                    state,
+                    destinationPath,
+                    out var existingDestination,
+                    out _))
+            {
+                var destinationEntry = fileSystem.Stat(existingDestination);
+                if (destinationEntry.IsFailure ||
+                    destinationEntry.Value.Type != FileNodeType.Directory)
+                {
+                    return LuaApiHelpers.Failure(
+                        script,
+                        "DestinationExists",
+                        "destination already exists");
+                }
+
+                destinationParent = existingDestination;
+                destinationName = sourceEntry.Value.Name;
+            }
+            else if (!LuaApiHelpers.TryResolveParent(
+                         state,
+                         destinationPath,
+                         out destinationParent,
+                         out destinationName,
+                         out var destinationError))
+            {
+                return LuaApiHelpers.Failure(script, destinationError);
+            }
+
+            var copied = fileSystem.CopyFile(
+                sourceId,
+                destinationParent,
+                destinationName,
+                LuaApiHelpers.CurrentOwnership(state),
+                state.Context.Shell.CreateAccessContext());
+            return copied.IsSuccess
+                ? LuaApiHelpers.Success(DynValue.NewString(copied.Value.ToString()))
+                : LuaApiHelpers.Failure(script, copied.Error);
         }
 
         private static DynValue Chmod(

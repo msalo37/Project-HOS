@@ -130,6 +130,50 @@ namespace HOS.Domain.Tests
         }
 
         [Test]
+        public void CopyFileClonesBytesPermissionsAndCreatesNewOwnedNode()
+        {
+            var sourcePermissions = new FilePermissions(
+                PermissionBits.Read | PermissionBits.Write | PermissionBits.Execute,
+                PermissionBits.Read,
+                PermissionBits.None);
+            var source = fileSystem.CreateFile(
+                fileSystem.RootId,
+                "source.hos",
+                rootOwnership,
+                sourcePermissions,
+                new FileContent(new byte[] { 0, 1, 2, 255 }),
+                kernel).Value;
+            var destination = CreateDirectory(fileSystem.RootId, "copies");
+            var copyOwnership = new FileOwnership(UserId.New(), GroupId.New());
+            fileSystem.DrainEvents();
+
+            var copied = fileSystem.CopyFile(
+                source,
+                destination,
+                "copy.hos",
+                copyOwnership,
+                kernel);
+
+            Assert.That(copied.IsSuccess, Is.True);
+            Assert.That(copied.Value, Is.Not.EqualTo(source));
+            var entry = fileSystem.Stat(copied.Value).Value;
+            Assert.That(entry.Ownership, Is.EqualTo(copyOwnership));
+            Assert.That(entry.Permissions, Is.EqualTo(sourcePermissions));
+            Assert.That(
+                fileSystem.ReadFile(copied.Value, kernel).Value.CopyBytes(),
+                Is.EqualTo(new byte[] { 0, 1, 2, 255 }));
+
+            var events = fileSystem.DrainEvents();
+            Assert.That(
+                System.Linq.Enumerable.Any(
+                    events,
+                    item => item is FileSystemEvent fileEvent &&
+                            fileEvent.Action == FileSystemAction.Copied &&
+                            fileEvent.NodeId == copied.Value),
+                Is.True);
+        }
+
+        [Test]
         public void SymbolicLinkResolvesAndLoopIsDetected()
         {
             var target = CreateDirectory(fileSystem.RootId, "target");

@@ -12,6 +12,16 @@ namespace HOS.Unity.Installers
         public override void InstallBindings()
         {
             var bootstrap = new DefaultGameBootstrap().Create();
+            var luaOptions = new LuaRuntimeOptions();
+            var builtinPrograms = new BuiltinProgramRegistry(
+                new IBuiltinProgram[]
+                {
+                    new NanoProgram(),
+                    new SystemInfoProgram()
+                });
+            var runtime = new ProgramRuntimeRouter(
+                new LuaProgramRuntime(luaOptions),
+                new BinaryProgramRuntime(builtinPrograms));
 
             Container.BindInstance(bootstrap).AsSingle();
             Container.BindInstance(bootstrap.World).AsSingle();
@@ -21,8 +31,9 @@ namespace HOS.Unity.Installers
             Container.Bind<CommandLineParser>().AsSingle();
             Container.Bind<ExecutableResolver>().AsSingle();
             Container.Bind<RemoteAccessService>().AsSingle();
-            Container.Bind<LuaRuntimeOptions>().AsSingle();
-            Container.Bind<IProgramRuntime>().To<LuaProgramRuntime>().AsSingle();
+            Container.BindInstance(luaOptions).AsSingle();
+            Container.BindInstance(builtinPrograms).AsSingle();
+            Container.BindInstance<IProgramRuntime>(runtime).AsSingle();
             Container.Bind<ShellEngine>().AsSingle();
         }
     }

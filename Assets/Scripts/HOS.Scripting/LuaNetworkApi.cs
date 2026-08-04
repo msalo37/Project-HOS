@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Globalization;
 using HOS.Application.Remote;
 using HOS.Domain.Network;
 using MoonSharp.Interpreter;
@@ -57,6 +59,50 @@ namespace HOS.Scripting
                 info["port"] = DynValue.NewNumber(service.Value.Binding.Port);
                 return LuaApiHelpers.Success(DynValue.NewTable(info));
             }, "hos.net.service_info");
+            api["request"] = DynValue.NewCallback((_, args) =>
+            {
+                if (!ConnectionId.TryParse(
+                        LuaApiHelpers.RequiredString(args, 0, "hos.net.request"),
+                        out var connectionId))
+                    return LuaApiHelpers.Failure(script, "InvalidConnection", "invalid connection id");
+                var table = args.AsType(1, "hos.net.request", DataType.Table).Table;
+                var operation = table.Get("operation");
+                if (operation.Type != DataType.String || string.IsNullOrWhiteSpace(operation.String))
+                    return LuaApiHelpers.Failure(script, "InvalidRequest", "operation is required");
+
+                var fields = new Dictionary<string, string>();
+                foreach (var pair in table.Pairs)
+                {
+                    if (pair.Key.Type != DataType.String || pair.Key.String == "operation")
+                        continue;
+                    switch (pair.Value.Type)
+                    {
+                        case DataType.String:
+                            fields[pair.Key.String] = pair.Value.String;
+                            break;
+                        case DataType.Number:
+                            fields[pair.Key.String] = pair.Value.Number.ToString(CultureInfo.InvariantCulture);
+                            break;
+                        case DataType.Boolean:
+                            fields[pair.Key.String] = pair.Value.Boolean ? "true" : "false";
+                            break;
+                    }
+                }
+
+                var requested = state.Context.RemoteAccess.Request(
+                    connectionId,
+                    new ServiceRequest(operation.String, fields));
+                if (requested.IsFailure)
+                    return LuaApiHelpers.Failure(
+                        script, requested.Error.ToString(), "service request failed");
+
+                var response = new Table(script);
+                response["success"] = DynValue.NewBoolean(requested.Value.Success);
+                response["message"] = DynValue.NewString(requested.Value.Message);
+                foreach (var field in requested.Value.Fields)
+                    response[field.Key] = DynValue.NewString(field.Value);
+                return LuaApiHelpers.Success(DynValue.NewTable(response));
+            }, "hos.net.request");
             api["login"] = DynValue.NewCallback((_, args) =>
             {
                 var ip = LuaApiHelpers.RequiredString(args, 0, "hos.net.login");

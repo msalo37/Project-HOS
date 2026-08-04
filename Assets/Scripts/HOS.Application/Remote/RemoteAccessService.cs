@@ -12,16 +12,20 @@ namespace HOS.Application.Remote
     public enum RemoteAccessError
     {
         InvalidAddress, NetworkFailure, ConnectionNotFound, UnsupportedService,
-        AuthenticationRequired, InvalidCredentials, UserNotFound, HomeNotFound
+        AuthenticationRequired, InvalidCredentials, UserNotFound, HomeNotFound,
+        HandlerNotFound, PayloadInstallFailed
     }
 
     public sealed class RemoteAccessService
     {
         private readonly PlayerShellContext shell;
+        private readonly Dictionary<ServiceProtocol, IVirtualServiceHandler> handlers =
+            new Dictionary<ServiceProtocol, IVirtualServiceHandler>();
 
         public RemoteAccessService(PlayerShellContext shell)
         {
             this.shell = shell ?? throw new ArgumentNullException(nameof(shell));
+            RegisterHandler(new DevSyncServiceHandler());
         }
 
         public bool HasPendingLogin => Pending != null;
@@ -70,6 +74,42 @@ namespace HOS.Application.Remote
             return TryGetEndpoint(connectionId, out _, out _, out var service)
                 ? Result<MachineService, RemoteAccessError>.Success(service)
                 : Result<MachineService, RemoteAccessError>.Failure(RemoteAccessError.ConnectionNotFound);
+        }
+
+        public void RegisterHandler(IVirtualServiceHandler handler)
+        {
+            if (handler == null) throw new ArgumentNullException(nameof(handler));
+            handlers[handler.Protocol] = handler;
+        }
+
+        public Result<ServiceResponse, RemoteAccessError> Request(
+            ConnectionId connectionId,
+            ServiceRequest request)
+        {
+            if (request == null) throw new ArgumentNullException(nameof(request));
+            if (!TryGetEndpoint(connectionId, out var connection, out var machine, out var service))
+                return Result<ServiceResponse, RemoteAccessError>.Failure(RemoteAccessError.ConnectionNotFound);
+            if (!handlers.TryGetValue(service.Protocol, out var handler))
+                return Result<ServiceResponse, RemoteAccessError>.Failure(RemoteAccessError.HandlerNotFound);
+
+            var response = handler.Handle(
+                new VirtualServiceContext(connection, machine, service),
+                request);
+            if (!response.Success || !response.GrantedUserId.HasValue)
+                return Result<ServiceResponse, RemoteAccessError>.Success(response);
+
+            if (!machine.Users.TryGetUser(response.GrantedUserId.Value, out var user))
+                return Result<ServiceResponse, RemoteAccessError>.Failure(RemoteAccessError.UserNotFound);
+            var grant = CreateGrant(
+                connection, machine, user.Id, user.Name, AccessMethod.Exploit);
+            if (grant.IsFailure)
+                return Result<ServiceResponse, RemoteAccessError>.Failure(grant.Error);
+            if (!InstallPayload(machine, grant.Value, user.PrimaryGroup, response.Payload))
+                return Result<ServiceResponse, RemoteAccessError>.Failure(RemoteAccessError.PayloadInstallFailed);
+
+            shell.EnterRemote(grant.Value);
+            response.With("access_granted", "true").With("user", user.Name);
+            return Result<ServiceResponse, RemoteAccessError>.Success(response);
         }
 
         public Result<AccessGrant, RemoteAccessError> TryPasswordless(ConnectionId connectionId)
@@ -145,6 +185,37 @@ namespace HOS.Application.Remote
                 return Result<AccessGrant, RemoteAccessError>.Failure(RemoteAccessError.HomeNotFound);
             return Result<AccessGrant, RemoteAccessError>.Success(
                 new AccessGrant(connection.Id, machine.Id, userId, home.Value, method));
+        }
+
+        private static bool InstallPayload(
+            Machine machine,
+            AccessGrant grant,
+            HOS.Domain.Identity.GroupId groupId,
+            string payload)
+        {
+            var root = machine.Users.CreateAccessContext(machine.RootUserId, true);
+            var path = VirtualPath.Parse("last_job.lua");
+            var existing = machine.FileSystem.Resolve(grant.HomeDirectoryId, path.Value, root);
+            if (existing.IsSuccess)
+            {
+                return machine.FileSystem.WriteFile(
+                    existing.Value, FileContent.FromUtf8(payload), root).IsSuccess;
+            }
+
+            var permissions = new HOS.Domain.Identity.FilePermissions(
+                HOS.Domain.Identity.PermissionBits.Read |
+                HOS.Domain.Identity.PermissionBits.Write |
+                HOS.Domain.Identity.PermissionBits.Execute,
+                HOS.Domain.Identity.PermissionBits.Read |
+                HOS.Domain.Identity.PermissionBits.Execute,
+                HOS.Domain.Identity.PermissionBits.None);
+            return machine.FileSystem.CreateFile(
+                grant.HomeDirectoryId,
+                "last_job.lua",
+                new HOS.Domain.Identity.FileOwnership(grant.UserId, groupId),
+                permissions,
+                FileContent.FromUtf8(payload),
+                root).IsSuccess;
         }
     }
 
